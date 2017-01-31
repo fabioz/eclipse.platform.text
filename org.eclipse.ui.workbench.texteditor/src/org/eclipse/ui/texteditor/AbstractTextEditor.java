@@ -17,6 +17,7 @@
  *     Holger Voormann - Word Wrap - https://bugs.eclipse.org/bugs/show_bug.cgi?id=35779
  *     Florian Weßling <flo@cdhq.de> - Word Wrap - https://bugs.eclipse.org/bugs/show_bug.cgi?id=35779
  *     Andrey Loskutov <loskutov@gmx.de> - Word Wrap - https://bugs.eclipse.org/bugs/show_bug.cgi?id=35779
+ *     Fabio Zadrozny - Macro record/playback - http://eclip.se/8519
  *******************************************************************************/
 package org.eclipse.ui.texteditor;
 
@@ -29,6 +30,9 @@ import java.util.Map;
 import java.util.ResourceBundle;
 
 import org.osgi.framework.Bundle;
+
+import org.eclipse.e4.core.macros.EMacroService;
+import org.eclipse.e4.core.macros.IMacroStateListener;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.BusyIndicator;
@@ -132,6 +136,7 @@ import org.eclipse.jface.text.ITextHover;
 import org.eclipse.jface.text.ITextInputListener;
 import org.eclipse.jface.text.ITextListener;
 import org.eclipse.jface.text.ITextOperationTarget;
+import org.eclipse.jface.text.ITextOperationTargetExtension;
 import org.eclipse.jface.text.ITextSelection;
 import org.eclipse.jface.text.ITextViewer;
 import org.eclipse.jface.text.ITextViewerExtension;
@@ -198,6 +203,7 @@ import org.eclipse.ui.PartInitException;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.Saveable;
 import org.eclipse.ui.SaveablesLifecycleEvent;
+import org.eclipse.ui.XMLMemento;
 import org.eclipse.ui.actions.ActionFactory;
 import org.eclipse.ui.actions.ActionFactory.IWorkbenchAction;
 import org.eclipse.ui.actions.CommandNotMappedException;
@@ -208,6 +214,7 @@ import org.eclipse.ui.internal.texteditor.EditPosition;
 import org.eclipse.ui.internal.texteditor.FocusedInformationPresenter;
 import org.eclipse.ui.internal.texteditor.NLSUtility;
 import org.eclipse.ui.internal.texteditor.TextEditorPlugin;
+import org.eclipse.ui.internal.texteditor.macro.StyledTextMacroRecorder;
 import org.eclipse.ui.internal.texteditor.rulers.StringSetSerializer;
 import org.eclipse.ui.operations.LinearUndoViolationUserApprover;
 import org.eclipse.ui.operations.NonLocalUndoUserApprover;
@@ -2625,6 +2632,19 @@ public abstract class AbstractTextEditor extends EditorPart implements ITextEdit
 	 */
 	private IWorkbenchAction fSaveAction;
 
+	/**
+	 * The macro record context.
+	 *
+	 * @since 3.11
+	 */
+	private EMacroService fMacroService;
+
+	/**
+	 * Listener to deal with macro record/playback.
+	 *
+	 * @since 3.11
+	 */
+	private IMacroStateListener fMacroStateListener;
 
 	/**
 	 * Creates a new text editor. If not explicitly set, this editor uses
@@ -3189,13 +3209,152 @@ public abstract class AbstractTextEditor extends EditorPart implements ITextEdit
 		}
 	}
 
+	/**
+	 * Helper class to deal with entering/exiting macro record/playback.
+	 *
+	 * @since 3.11
+	 */
+	private final class MacroStateListener implements IMacroStateListener {
+
+		/**
+		 * null when not in macro record/playback. Used to check the current
+		 * state and store information to be restored when exiting macro mode.
+		 *
+		 */
+		private IMemento fMementoStateBeforeMacro;
+		/**
+		 * Helper class to record keystrokes on the StyledText.
+		 */
+		private StyledTextMacroRecorder fStyledTextMacroRecorder;
+		/**
+		 * Constant used to save whether the content assist was enabled before
+		 * being disabled in disableCodeCompletion.
+		 */
+		private static final String CONTENT_ASSIST_ENABLED = "contentAssistEnabled";//$NON-NLS-1$
+
+		/**
+		 * Re-enables the content assist based on the state of the key
+		 * {@link #CONTENT_ASSIST_ENABLED} in the passed memento.
+		 *
+		 * @param memento
+		 *            the memento where a key with
+		 *            {@link #CONTENT_ASSIST_ENABLED} with the enabled state of
+		 *            the content assist to be restored.
+		 */
+		private void restoreContentAssist(IMemento memento) {
+			ITextOperationTarget textOperationTarget = AbstractTextEditor.this.getAdapter(ITextOperationTarget.class);
+			if (textOperationTarget instanceof ITextOperationTargetExtension) {
+				ITextOperationTargetExtension targetExtension = (ITextOperationTargetExtension) textOperationTarget;
+				if (textOperationTarget instanceof ITextOperationTargetExtension) {
+					Boolean contentAssistProposalsBeforMacroMode = memento.getBoolean(CONTENT_ASSIST_ENABLED);
+					if (contentAssistProposalsBeforMacroMode != null) {
+						if ((contentAssistProposalsBeforMacroMode).booleanValue()) {
+							targetExtension.enableOperation(ISourceViewer.CONTENTASSIST_PROPOSALS, true);
+						} else {
+							targetExtension.enableOperation(ISourceViewer.CONTENTASSIST_PROPOSALS, false);
+						}
+					}
+				}
+			}
+		}
+
+		/**
+		 * Disables the content assist and saves the previous state on the
+		 * passed memento (note that it's only saved if it is actually disabled
+		 * here).
+		 *
+		 * @param memento
+		 *            memento where the previous state should be saved, to be
+		 *            properly restored later on in
+		 *            {@link #restoreContentAssist(IMemento)}.
+		 */
+		private void disableContentAssist(IMemento memento) {
+			ITextOperationTarget textOperationTarget = AbstractTextEditor.this.getAdapter(ITextOperationTarget.class);
+			if (textOperationTarget instanceof ITextOperationTargetExtension) {
+				ITextOperationTargetExtension targetExtension = (ITextOperationTargetExtension) textOperationTarget;
+
+				// Disable content assist and mark it to be restored
+				// later on
+				if (textOperationTarget.canDoOperation(ISourceViewer.CONTENTASSIST_PROPOSALS)) {
+					memento.putBoolean(CONTENT_ASSIST_ENABLED, true);
+					targetExtension.enableOperation(ISourceViewer.CONTENTASSIST_PROPOSALS, false);
+				}
+			}
+		}
+
+		/**
+		 * Implemented to properly deal with macro recording/playback (i.e.: the
+		 * editor may need to disable content assist during macro recording and
+		 * it needs to record keystrokes to be played back afterwards).
+		 *
+		 * @see org.eclipse.e4.core.macros.IMacroStateListener#macroStateChanged(org.eclipse.e4.core.macros.EMacroService)
+		 */
+		@Override
+		public void macroStateChanged(EMacroService macroService) {
+			if (macroService.isPlayingBack()
+					|| (macroService.isRecording() && getDisableContentAssistOnMacroRecord())) {
+				// We always need to disable content assist on playback and we
+				// selectively disable it on record based on
+				// the return of getDisableContentAssistOnMacroRecord(), which
+				// subclasses may override.
+				if (fMementoStateBeforeMacro == null) {
+					fMementoStateBeforeMacro = XMLMemento.createWriteRoot("AbstractTextEditorXmlMemento"); //$NON-NLS-1$
+					disableContentAssist(fMementoStateBeforeMacro);
+				}
+			} else {
+				if (fMementoStateBeforeMacro != null) {
+					// Restores content assist if it was disabled (based on the
+					// memento)
+					restoreContentAssist(fMementoStateBeforeMacro);
+					fMementoStateBeforeMacro = null;
+				}
+			}
+
+			// When recording install a recorder for key events (and uninstall
+			// if not recording).
+			if (macroService.isRecording()) {
+				if (fStyledTextMacroRecorder == null) {
+					ISourceViewer viewer = fSourceViewer;
+					if (viewer != null && macroService.isRecording()) {
+						StyledText textWidget = viewer.getTextWidget();
+						if (textWidget != null && !textWidget.isDisposed()) {
+							fStyledTextMacroRecorder = new StyledTextMacroRecorder(macroService);
+							fStyledTextMacroRecorder.install(textWidget);
+						}
+					}
+				}
+			} else { // !macroService.isRecording()
+				if (fStyledTextMacroRecorder != null) {
+					ISourceViewer viewer = fSourceViewer;
+					if (viewer != null && !macroService.isRecording()) {
+						StyledText textWidget = viewer.getTextWidget();
+						if (textWidget != null && !textWidget.isDisposed()) {
+							fStyledTextMacroRecorder.uninstall(textWidget);
+							fStyledTextMacroRecorder = null;
+						}
+					}
+				}
+			}
+		}
+	}
+
 	@Override
 	public void init(final IEditorSite site, final IEditorInput input) throws PartInitException {
-
 		setSite(site);
 
 		internalInit(site.getWorkbenchWindow(), site, input);
-		fActivationListener= new ActivationListener(site.getWorkbenchWindow().getPartService());
+		fActivationListener = new ActivationListener(site.getWorkbenchWindow().getPartService());
+
+		fMacroService = site.getService(EMacroService.class);
+		if (fMacroService != null) {
+			fMacroStateListener = new MacroStateListener();
+			fMacroService.addMacroStateListener(fMacroStateListener);
+			if (fMacroService.isRecording() || fMacroService.isPlayingBack()) {
+				// If it's already on a record or playback session, enter the
+				// mode properly.
+				this.fMacroStateListener.macroStateChanged(fMacroService);
+			}
+		}
 	}
 
 	/**
@@ -4460,6 +4619,12 @@ public abstract class AbstractTextEditor extends EditorPart implements ITextEdit
 		if (fSaveAction != null) {
 			fSaveAction.dispose();
 			fSaveAction= null;
+		}
+
+		if (fMacroService != null && this.fMacroStateListener != null) {
+			fMacroService.removeMacroStateListener(this.fMacroStateListener);
+			fMacroService = null;
+			fMacroStateListener = null;
 		}
 
 		super.dispose();
@@ -7398,5 +7563,22 @@ public abstract class AbstractTextEditor extends EditorPart implements ITextEdit
 			return false;
 		}
 		return store.getBoolean(PREFERENCE_WORD_WRAP_ENABLED);
+	}
+
+	/**
+	 * Subclasses may override if they want to leave content assist enabled when
+	 * recording a macro.
+	 *
+	 * Note that if they choose to leave content assist enabled when writing a
+	 * macro, they also need to make sure that when applying a content assist,
+	 * such an action is properly recorded.
+	 *
+	 * @return true if content assist should be disabled when recording a macro
+	 *         and false otherwise.
+	 *
+	 * @since 3.11
+	 */
+	protected boolean getDisableContentAssistOnMacroRecord() {
+		return true;
 	}
 }
