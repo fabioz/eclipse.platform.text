@@ -1299,4 +1299,74 @@
             commandId="org.eclipse.ui.edit.text.zoomOut">
       </handler>
    </extension>
+   
+   <extension point="org.eclipse.e4.core.macros.commands">
+      <accept id="org.eclipse.ui.edit.cut" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.copy" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.paste" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.delete" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.undo" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.redo" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.join.lines" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.delete.line" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.removeTrailingWhitespace" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.delete.line.to.beginning" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.delete.line.to.end" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.cut.line" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.cut.line.to.beginning" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.cut.line.to.end" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.goto.lineUp" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.goto.lineDown" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.goto.lineStart" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.goto.lineEnd" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.goto.columnPrevious" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.goto.columnNext" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.goto.pageUp" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.goto.pageDown" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.goto.wordPrevious" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.goto.wordNext" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.goto.textStart" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.goto.textEnd" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.goto.windowStart" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.goto.windowEnd" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.scroll.lineUp" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.scroll.lineDown" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.select.lineUp" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.select.lineDown" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.select.lineStart" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.select.lineEnd" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.select.columnPrevious" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.select.columnNext" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.select.pageUp" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.select.pageDown" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.select.wordPrevious" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.select.wordNext" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.select.textStart" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.select.textEnd" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.select.windowStart" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.select.windowEnd" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.deletePrevious" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.deleteNext" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.deletePreviousWord" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.deleteNextWord" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.shiftRight" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.shiftLeft" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.toggleOverwrite" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.smartEnter" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.smartEnterInverse" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.moveLineUp" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.moveLineDown" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.copyLineUp" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.copyLineDown" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.upperCase" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.lowerCase" recordActivation="true"/>
+      <accept id="org.eclipse.ui.edit.text.toggleInsertMode" recordActivation="true"/>
+   </extension>
+   <extension
+         point="org.eclipse.e4.core.macros.macro_command">
+      <macro_command
+            creator_class="org.eclipse.ui.internal.texteditor.macro.StyledTextKeyDownMacroCommandCreator"
+            macro_command_id="org.eclipse.ui.texteditor.macro.styled_text_key_down_macro_command">
+      </macro_command>
+   </extension>
 </plugin>
