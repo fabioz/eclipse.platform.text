@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.regex.PatternSyntaxException;
 
 import org.eclipse.core.runtime.Assert;
@@ -655,10 +656,10 @@ public abstract class AbstractDocument implements IDocument, IDocumentExtension,
 
 		if (fDocumentPartitioners != null) {
 			fDocumentPartitioningChangedEvent= new DocumentPartitioningChangedEvent(this);
-			Iterator<String> e= fDocumentPartitioners.keySet().iterator();
-			while (e.hasNext()) {
-				String partitioning= e.next();
-				IDocumentPartitioner partitioner= fDocumentPartitioners.get(partitioning);
+			for (Entry<String, IDocumentPartitioner> entry : fDocumentPartitioners.entrySet()) {
+
+				String partitioning= entry.getKey();
+				IDocumentPartitioner partitioner= entry.getValue();
 
 				if (partitioner instanceof IDocumentPartitionerExtension3) {
 					IDocumentPartitionerExtension3 extension= (IDocumentPartitionerExtension3) partitioner;
@@ -837,8 +838,8 @@ public abstract class AbstractDocument implements IDocument, IDocumentExtension,
 		String sysLineDelimiter= System.getProperty("line.separator"); //$NON-NLS-1$
 		String[] delimiters= getLegalLineDelimiters();
 		Assert.isTrue(delimiters.length > 0);
-		for (int i= 0; i < delimiters.length; i++) {
-			if (delimiters[i].equals(sysLineDelimiter)) {
+		for (String delimiter : delimiters) {
+			if (delimiter.equals(sysLineDelimiter)) {
 				lineDelimiter= sysLineDelimiter;
 				break;
 			}
@@ -1612,8 +1613,7 @@ public abstract class AbstractDocument implements IDocument, IDocumentExtension,
 
 			Position region= new Position(offset, length);
 
-			for (Iterator<Position> iterator= documentPositions.iterator(); iterator.hasNext();) {
-				Position position= iterator.next();
+			for (Position position : documentPositions) {
 				if (isWithinRegion(region, position, canStartBefore, canEndAfter)) {
 					list.add(position);
 				}

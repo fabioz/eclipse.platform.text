@@ -93,7 +93,7 @@ public class TableOwnerDrawSupport implements Listener {
 
 	/**
 	 * Handles the measure event.
-	 * 
+	 *
 	 * @param event the measure event
 	 */
 	private void measureItem(Event event) {
@@ -114,8 +114,8 @@ public class TableOwnerDrawSupport implements Listener {
 
 		StyleRange[] ranges= getStyledRanges(item, index);
 		if (ranges != null) {
-			for (int i= 0; i < ranges.length; i++) {
-				StyleRange curr= ranges[i];
+			for (StyleRange range : ranges) {
+				StyleRange curr= range;
 				if (isSelected) {
 					curr= (StyleRange) curr.clone();
 					curr.foreground= null;

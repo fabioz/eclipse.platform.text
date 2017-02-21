@@ -19,11 +19,13 @@ import org.eclipse.jface.text.contentassist.IContextInformationValidator;
 
 public class BarContentAssistProcessor implements IContentAssistProcessor {
 
+	public static final String PROPOSAL = "s are good for a beer.";
+
 	@Override
 	public ICompletionProposal[] computeCompletionProposals(ITextViewer viewer, int offset) {
-		String text = viewer.getTextWidget().getText();
+		String text = viewer.getDocument().get();
 		if (text.length() >= 3 && text.substring(offset - 3, offset).equals("bar")) {
-			String message = "s are good for a beer.";
+			String message = PROPOSAL;
 			CompletionProposal proposal = new CompletionProposal(message, offset, 0, message.length());
 			return new ICompletionProposal[] { proposal };
 		}

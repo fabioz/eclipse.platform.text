@@ -267,8 +267,7 @@ public class TemplateReaderWriter {
 			Node root= document.createElement(TEMPLATE_ROOT);
 			document.appendChild(root);
 
-			for (int i= 0; i < templates.length; i++) {
-				TemplatePersistenceData data= templates[i];
+			for (TemplatePersistenceData data : templates) {
 				Template template= data.getTemplate();
 
 				Node node= document.createElement(TEMPLATE_ELEMENT);
@@ -340,7 +339,7 @@ public class TemplateReaderWriter {
 
 	/**
 	 * Validates whether the given string only contains valid XML characters.
-	 * 
+	 *
 	 * @param string the string to validate
 	 * @return the input string
 	 * @throws IOException when the first invalid character is detected

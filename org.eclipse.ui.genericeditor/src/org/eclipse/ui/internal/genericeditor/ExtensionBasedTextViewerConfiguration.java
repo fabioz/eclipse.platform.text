@@ -17,9 +17,13 @@ import java.util.List;
 import java.util.Queue;
 import java.util.Set;
 
+import org.eclipse.swt.widgets.Shell;
+
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.content.IContentType;
+
 import org.eclipse.jface.preference.IPreferenceStore;
+
 import org.eclipse.jface.text.AbstractReusableInformationControlCreator;
 import org.eclipse.jface.text.DefaultInformationControl;
 import org.eclipse.jface.text.IDocument;
@@ -31,11 +35,13 @@ import org.eclipse.jface.text.contentassist.IContentAssistProcessor;
 import org.eclipse.jface.text.contentassist.IContentAssistant;
 import org.eclipse.jface.text.presentation.IPresentationReconciler;
 import org.eclipse.jface.text.source.ISourceViewer;
-import org.eclipse.swt.widgets.Shell;
+
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.IPropertyListener;
-import org.eclipse.ui.editors.text.TextSourceViewerConfiguration;
+
 import org.eclipse.ui.texteditor.ITextEditor;
+
+import org.eclipse.ui.editors.text.TextSourceViewerConfiguration;
 
 /**
  * The configuration of the {@link ExtensionBasedTextEditor}. It registers the proxy composite
@@ -49,8 +55,9 @@ public final class ExtensionBasedTextViewerConfiguration extends TextSourceViewe
 	private ITextEditor editor;
 	private Set<IContentType> contentTypes;
 	private IDocument document;
+
 	private ContentAssistant contentAssistant;
-	private IContentAssistProcessor contentAssistProcessor;
+	private List<IContentAssistProcessor> processors;
 
 	/**
 	 * 
@@ -95,13 +102,15 @@ public final class ExtensionBasedTextViewerConfiguration extends TextSourceViewe
 	@Override
 	public IContentAssistant getContentAssistant(ISourceViewer sourceViewer) {
 		ContentAssistProcessorRegistry registry= GenericEditorPlugin.getDefault().getContentAssistProcessorRegistry();
-		contentAssistProcessor = new CompositeContentAssistProcessor(registry.getContentAssistProcessors(sourceViewer, getContentTypes()));
-		contentAssistant = new ContentAssistant();
+		contentAssistant= new ContentAssistant(true);
 		contentAssistant.setContextInformationPopupOrientation(ContentAssistant.CONTEXT_INFO_BELOW);
 		contentAssistant.setProposalPopupOrientation(ContentAssistant.PROPOSAL_REMOVE);
 		contentAssistant.enableColoredLabels(true);
 		contentAssistant.enableAutoActivation(true);
-		contentAssistant.setContentAssistProcessor(contentAssistProcessor, IDocument.DEFAULT_CONTENT_TYPE);
+		this.processors = registry.getContentAssistProcessors(sourceViewer, getContentTypes());
+		for (IContentAssistProcessor processor : this.processors) {
+			contentAssistant.addContentAssistProcessor(processor, IDocument.DEFAULT_CONTENT_TYPE);
+		}
 		if (this.document != null) {
 			associateTokenContentTypes(this.document);
 		}
@@ -142,11 +151,13 @@ public final class ExtensionBasedTextViewerConfiguration extends TextSourceViewe
 	}
 
 	private void associateTokenContentTypes(IDocument document) {
-		if (contentAssistant == null) {
+		if (contentAssistant == null || this.processors == null) {
 			return;
 		}
 		for (String legalTokenContentType : document.getLegalContentTypes()) {
-			contentAssistant.setContentAssistProcessor(this.contentAssistProcessor, legalTokenContentType);
+			for (IContentAssistProcessor processor : this.processors) {
+				contentAssistant.addContentAssistProcessor(processor, legalTokenContentType);
+			}
 		}
 	}
 

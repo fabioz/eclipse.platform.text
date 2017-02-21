@@ -841,7 +841,12 @@ public class LineNumberRulerColumn implements IVerticalRulerColumn {
 		int widgetLine= JFaceTextUtil.modelLineToWidgetLine(fCachedTextViewer, line);
 
 		String s= createDisplayString(line);
-		int indentation= fIndentation[s.length()];
+		int index= s.length();
+		if (index >= fIndentation.length) {
+			// Bug 325434: our data is not in-sync with the document, don't try to paint
+			return;
+		}
+		int indentation= fIndentation[index];
 		int baselineBias= getBaselineBias(gc, widgetLine);
 		gc.drawString(s, indentation, y + baselineBias, true);
 	}
@@ -876,7 +881,6 @@ public class LineNumberRulerColumn implements IVerticalRulerColumn {
 		if (!isDisposed()) {
 			if (VerticalRuler.AVOID_NEW_GC) {
 				fCanvas.redraw();
-				fCanvas.update();
 			} else {
 				GC gc= new GC(fCanvas);
 				doubleBufferPaint(gc);
@@ -917,7 +921,7 @@ public class LineNumberRulerColumn implements IVerticalRulerColumn {
 
 	/**
 	 * Handles mouse scrolled events on the ruler by forwarding them to the text widget.
-	 * 
+	 *
 	 * @param e the mouse event
 	 * @since 3.10
 	 */

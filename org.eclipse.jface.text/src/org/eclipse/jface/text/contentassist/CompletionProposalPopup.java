@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2016 IBM Corporation and others.
+ * Copyright (c) 2000, 2017 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * which accompanies this distribution, and is available at
@@ -11,11 +11,13 @@
  *     Marcel Bruch, bruch@cs.tu-darmstadt.de - [content assist] Allow to re-sort proposals - https://bugs.eclipse.org/bugs/show_bug.cgi?id=350991
  *     Terry Parker, tparker@google.com - Protect against poorly behaved completion proposers - http://bugs.eclipse.org/429925
  *     Lars Vogel <Lars.Vogel@vogella.com> - Bug 493649
+ *     Mickael Istria (Red Hat Inc.) - [251156] Allow multiple contentAssitProviders internally & inheritance
  *******************************************************************************/
 package org.eclipse.jface.text.contentassist;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import org.eclipse.osgi.util.TextProcessor;
@@ -214,7 +216,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 		}
 	}
 
-	private final class ProposalSelectionListener implements KeyListener {
+	final class ProposalSelectionListener implements KeyListener {
 		@Override
 		public void keyPressed(KeyEvent e) {
 			if (!Helper.okToUse(fProposalShell))
@@ -267,33 +269,33 @@ class CompletionProposalPopup implements IContentAssistListener {
 
 
 	/** The associated text viewer. */
-	private ITextViewer fViewer;
+	ITextViewer fViewer;
 	/** The associated content assistant. */
-	private final ContentAssistant fContentAssistant;
+	final ContentAssistant fContentAssistant;
 	/** The used additional info controller, or <code>null</code> if none. */
 	private final AdditionalInfoController fAdditionalInfoController;
 	/** The closing strategy for this completion proposal popup. */
 	private final PopupCloser fPopupCloser= new PopupCloser();
 	/** The popup shell. */
-	private Shell fProposalShell;
+	Shell fProposalShell;
 	/** The proposal table. */
 	private Table fProposalTable;
 	/** Indicates whether a completion proposal is being inserted. */
 	private boolean fInserting= false;
 	/** The key listener to control navigation. */
-	private ProposalSelectionListener fKeyListener;
+	ProposalSelectionListener fKeyListener;
 	/** List of document events used for filtering proposals. */
 	private final List<DocumentEvent> fDocumentEvents= new ArrayList<>();
 	/** Listener filling the document event queue. */
 	private IDocumentListener fDocumentListener;
 	/** The filter list of proposals. */
-	private ICompletionProposal[] fFilteredProposals;
+	private List<ICompletionProposal> fFilteredProposals;
 	/** The computed list of proposals. */
-	private ICompletionProposal[] fComputedProposals;
+	List<ICompletionProposal> fComputedProposals;
 	/** The offset for which the proposals have been computed. */
-	private int fInvocationOffset;
+	int fInvocationOffset;
 	/** The offset for which the computed proposals have been filtered. */
-	private int fFilterOffset;
+	int fFilterOffset;
 	/**
 	 * The most recently selected proposal.
 	 * @since 3.0
@@ -305,14 +307,14 @@ class CompletionProposalPopup implements IContentAssistListener {
 	 *
 	 * @since 3.0
 	 */
-	private IContentAssistSubjectControl fContentAssistSubjectControl;
+	IContentAssistSubjectControl fContentAssistSubjectControl;
 	/**
 	 * The content assist subject control adapter.
 	 * This replaces <code>fViewer</code>
 	 *
 	 * @since 3.0
 	 */
-	private final ContentAssistSubjectControlAdapter fContentAssistSubjectControlAdapter;
+	final ContentAssistSubjectControlAdapter fContentAssistSubjectControlAdapter;
 	/**
 	 * Remembers the size for this completion proposal popup.
 	 * @since 3.0
@@ -348,7 +350,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 				return;
 
 			int offset= fContentAssistSubjectControlAdapter.getSelectedRange().x;
-			ICompletionProposal[] proposals= null;
+			List<ICompletionProposal> proposals= null;
 			try  {
 				if (offset > -1) {
 					DocumentEvent event= TextUtilities.mergeProcessedDocumentEvents(fDocumentEvents);
@@ -360,7 +362,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 			}
 			fFilterOffset= offset;
 
-			if (proposals != null && proposals.length > 0)
+			if (proposals != null && proposals.size() > 0)
 				setProposals(proposals, fIsFilteredSubset);
 			else
 				hide();
@@ -391,7 +393,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 	 *
 	 * @since 3.2
 	 */
-	private int fLastCompletionOffset;
+	int fLastCompletionOffset;
 	/**
 	 * The (reusable) empty proposal.
 	 *
@@ -415,18 +417,18 @@ class CompletionProposalPopup implements IContentAssistListener {
 	/**
 	 * The sorter to be used for sorting the proposals or <code>null</code> if no sorting is
 	 * requested.
-	 * 
+	 *
 	 * @since 3.8
 	 */
-	private ICompletionProposalSorter fSorter;
+	ICompletionProposalSorter fSorter;
 
 	/**
 	 * Set to true by {@link #computeProposals(int)} when initial sorting is performed on the
 	 * computed proposals using {@link #fSorter}.
-	 * 
+	 *
 	 * @since 3.11
 	 */
-	private boolean fIsInitialSort;
+	boolean fIsInitialSort;
 
 	/**
 	 * Creates a new completion proposal popup for the given elements.
@@ -486,12 +488,12 @@ class CompletionProposalPopup implements IContentAssistListener {
 					fLastCompletionOffset= fFilterOffset;
 					fComputedProposals= computeProposals(fInvocationOffset);
 
-					int count= (fComputedProposals == null ? 0 : fComputedProposals.length);
+					int count= (fComputedProposals == null ? 0 : fComputedProposals.size());
 					if (count == 0 && hideWhenNoProposals(autoActivated))
 						return;
 
-					if (count == 1 && !autoActivated && canAutoInsert(fComputedProposals[0])) {
-						insertProposal(fComputedProposals[0], (char) 0, 0, fInvocationOffset);
+					if (count == 1 && !autoActivated && canAutoInsert(fComputedProposals.get(0))) {
+						insertProposal(fComputedProposals.get(0), (char) 0, 0, fInvocationOffset);
 						hide();
 					} else {
 						createProposalSelector();
@@ -516,7 +518,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 	 * @return <code>false</code> if an empty list should be displayed, <code>true</code> otherwise
 	 * @since 3.2
 	 */
-	private boolean hideWhenNoProposals(boolean autoActivated) {
+	boolean hideWhenNoProposals(boolean autoActivated) {
 		if (autoActivated || !fContentAssistant.isShowEmptyList()) {
 			if (!autoActivated) {
 				Control control= fContentAssistSubjectControlAdapter.getControl();
@@ -535,7 +537,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 	 *
 	 * @since 3.2
 	 */
-	private void handleRepeatedInvocation() {
+	void handleRepeatedInvocation() {
 		if (fContentAssistant.isRepeatedInvocationMode()) {
 			fComputedProposals= computeProposals(fFilterOffset);
 			setProposals(fComputedProposals, false);
@@ -548,17 +550,19 @@ class CompletionProposalPopup implements IContentAssistListener {
 	 * requested with {@link #fSorter}.
 	 *
 	 * @param offset the offset
-	 * @return the completion proposals available at this offset
+	 * @return the completion proposals available at this offset, never null
 	 */
-	private ICompletionProposal[] computeProposals(int offset) {
-		ICompletionProposal[] proposals;
+	private List<ICompletionProposal> computeProposals(int offset) {
+		ICompletionProposal[] completionProposals;
 		if (fContentAssistSubjectControl != null) {
-			proposals= fContentAssistant.computeCompletionProposals(fContentAssistSubjectControl, offset);
+			completionProposals= fContentAssistant.computeCompletionProposals(fContentAssistSubjectControl, offset);
 		} else {
-			proposals= fContentAssistant.computeCompletionProposals(fViewer, offset);
+			completionProposals= fContentAssistant.computeCompletionProposals(fViewer, offset);
 		}
-		if (proposals == null)
-			return new ICompletionProposal[] {};
+		if (completionProposals == null) {
+			return Collections.emptyList();
+		}
+		List<ICompletionProposal> proposals= Arrays.asList(completionProposals);
 		if (fSorter != null) {
 			sortProposals(proposals);
 			fIsInitialSort= true;
@@ -571,14 +575,14 @@ class CompletionProposalPopup implements IContentAssistListener {
 	 *
 	 * @return the error message
 	 */
-	private String getErrorMessage() {
+	String getErrorMessage() {
 		return fContentAssistant.getErrorMessage();
 	}
 
 	/**
 	 * Creates the proposal selector.
 	 */
-	private void createProposalSelector() {
+	void createProposalSelector() {
 		if (Helper.okToUse(fProposalShell))
 			return;
 
@@ -808,8 +812,8 @@ class CompletionProposalPopup implements IContentAssistListener {
 				Font font= fMessageText.getFont();
 				Display display= fProposalShell.getDisplay();
 				FontData[] fontDatas= font.getFontData();
-				for (int i= 0; i < fontDatas.length; i++)
-					fontDatas[i].setHeight(fontDatas[i].getHeight() * 9 / 10);
+				for (FontData fontData : fontDatas)
+					fontData.setHeight(fontData.getHeight() * 9 / 10);
 				fMessageTextFont= new Font(display, fontDatas);
 			}
 			fMessageText.setFont(fMessageTextFont);
@@ -841,8 +845,8 @@ class CompletionProposalPopup implements IContentAssistListener {
 		TableItem item= (TableItem) event.item;
 		int index= fProposalTable.indexOf(item);
 
-		if (0 <= index && index < fFilteredProposals.length) {
-			ICompletionProposal current= fFilteredProposals[index];
+		if (0 <= index && index < fFilteredProposals.size()) {
+			ICompletionProposal current= fFilteredProposals.get(index);
 
 			String displayString;
 			StyleRange[] styleRanges= null;
@@ -909,9 +913,9 @@ class CompletionProposalPopup implements IContentAssistListener {
 			return null;
 
 		int i= fProposalTable.getSelectionIndex();
-		if (fFilteredProposals == null || i < 0 || i >= fFilteredProposals.length)
+		if (fFilteredProposals == null || i < 0 || i >= fFilteredProposals.size())
 			return null;
-		return fFilteredProposals[i];
+		return fFilteredProposals.get(i);
 	}
 
 	/**
@@ -937,7 +941,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 	 * @param offset the offset
 	 * @since 2.1
 	 */
-	private void insertProposal(ICompletionProposal p, char trigger, int stateMask, final int offset) {
+	void insertProposal(ICompletionProposal p, char trigger, int stateMask, final int offset) {
 
 		fInserting= true;
 		IRewriteTarget target= null;
@@ -1134,14 +1138,14 @@ class CompletionProposalPopup implements IContentAssistListener {
 	/**
 	 * Initializes the proposal selector with these given proposals. If a proposal sorter is
 	 * configured, the given proposals are sorted before.
-	 * 
+	 *
 	 * @param proposals the proposals
 	 * @param isFilteredSubset if <code>true</code>, the proposal table is
 	 *        not cleared, but the proposals that are not in the passed array
 	 *        are removed from the displayed set
 	 */
-	private void setProposals(ICompletionProposal[] proposals, boolean isFilteredSubset) {
-		ICompletionProposal[] oldProposals= fFilteredProposals;
+	void setProposals(List<ICompletionProposal> proposals, boolean isFilteredSubset) {
+		List<ICompletionProposal> oldProposals= fFilteredProposals;
 		ICompletionProposal oldProposal= getSelectedProposal(); // may trigger filtering and a reentrant call to setProposals()
 		if (oldProposals != fFilteredProposals) // reentrant call was first - abort
 			return;
@@ -1150,10 +1154,10 @@ class CompletionProposalPopup implements IContentAssistListener {
 			if (oldProposal instanceof ICompletionProposalExtension2 && fViewer != null)
 				((ICompletionProposalExtension2) oldProposal).unselected(fViewer);
 
-			if (proposals == null || proposals.length == 0) {
+			if (proposals == null || proposals.isEmpty()) {
 				fEmptyProposal.fOffset= fFilterOffset;
 				fEmptyProposal.fDisplayString= fEmptyMessage != null ? fEmptyMessage : JFaceTextMessages.getString("CompletionProposalPopup.no_proposals"); //$NON-NLS-1$
-				proposals= new ICompletionProposal[] { fEmptyProposal };
+				proposals= Collections.singletonList(fEmptyProposal);
 			}
 
 			if (fSorter != null && !fIsInitialSort) {
@@ -1162,7 +1166,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 			fIsInitialSort= false;
 
 			fFilteredProposals= proposals;
-			final int newLen= proposals.length;
+			final int newLen= proposals.size();
 
 			fProposalTable.clearAll();
 			fProposalTable.setItemCount(newLen);
@@ -1201,7 +1205,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 	 * Displays this popup and install the additional info controller, so that additional info
 	 * is displayed when a proposal is selected and additional info is available.
 	 */
-	private void displayProposals() {
+	void displayProposals() {
 
 		if (!Helper.okToUse(fProposalShell) ||  !Helper.okToUse(fProposalTable))
 			return;
@@ -1392,7 +1396,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 			return;
 		}
 
-		ICompletionProposal proposal= fFilteredProposals[index];
+		ICompletionProposal proposal= fFilteredProposals.get(index);
 		if (proposal instanceof ICompletionProposalExtension2 && fViewer != null)
 			((ICompletionProposalExtension2) proposal).selected(fViewer, smartToggle);
 
@@ -1419,7 +1423,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 
 	/**
 	 * Fires an event after applying the given proposal, see {@link ICompletionListenerExtension2}.
-	 * 
+	 *
 	 * @param proposal the applied proposal
 	 * @since 3.8
 	 */
@@ -1429,7 +1433,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 
 	/**
 	 * Returns whether the given character is contained in the given array of characters.
-	 * 
+	 *
 	 * @param characters the list of characters
 	 * @param c the character to look for in the list
 	 * @return <code>true</code> if character belongs to the list
@@ -1440,8 +1444,8 @@ class CompletionProposalPopup implements IContentAssistListener {
 		if (characters == null)
 			return false;
 
-		for (int i= 0; i < characters.length; i++) {
-			if (c == characters[i])
+		for (char character : characters) {
+			if (c == character)
 				return true;
 		}
 
@@ -1473,7 +1477,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 	 * @return the set of filtered proposals
 	 * @since 3.0
 	 */
-	private ICompletionProposal[] computeFilteredProposals(int offset, DocumentEvent event) {
+	private List<ICompletionProposal> computeFilteredProposals(int offset, DocumentEvent event) {
 
 		if (offset == fInvocationOffset && event == null) {
 			fIsFilteredSubset= false;
@@ -1488,7 +1492,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 			return fComputedProposals;
 		}
 
-		ICompletionProposal[] proposals;
+		List<ICompletionProposal> proposals;
 		if (offset < fFilterOffset) {
 			proposals= fComputedProposals;
 			fIsFilteredSubset= false;
@@ -1503,25 +1507,25 @@ class CompletionProposalPopup implements IContentAssistListener {
 		}
 
 		IDocument document= fContentAssistSubjectControlAdapter.getDocument();
-		int length= proposals.length;
-		List<Object> filtered= new ArrayList<>(length);
-		for (int i= 0; i < length; i++) {
+		int length= proposals.size();
+		List<ICompletionProposal> filtered= new ArrayList<>(length);
+		for (ICompletionProposal proposal : proposals) {
 
-			if (proposals[i] instanceof ICompletionProposalExtension2) {
+			if (proposal instanceof ICompletionProposalExtension2) {
 
-				ICompletionProposalExtension2 p= (ICompletionProposalExtension2) proposals[i];
+				ICompletionProposalExtension2 p= (ICompletionProposalExtension2) proposal;
 				try {
 					if (p.validate(document, offset, event))
-						filtered.add(p);
+						filtered.add(proposal);
 				} catch (RuntimeException e) {
 					// Make sure that poorly behaved completion proposers do not break filtering.
 				}
-			} else if (proposals[i] instanceof ICompletionProposalExtension) {
+			} else if (proposal instanceof ICompletionProposalExtension) {
 
-				ICompletionProposalExtension p= (ICompletionProposalExtension) proposals[i];
+				ICompletionProposalExtension p= (ICompletionProposalExtension) proposal;
 				try {
 					if (p.isValidFor(document, offset))
-						filtered.add(p);
+						filtered.add(proposal);
 				} catch (RuntimeException e) {
 					// Make sure that poorly behaved completion proposers do not break filtering.
 				}
@@ -1535,7 +1539,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 			}
 		}
 
-		return filtered.toArray(new ICompletionProposal[filtered.size()]);
+		return filtered;
 	}
 
 	/**
@@ -1558,7 +1562,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 	 *         <code>false</code> otherwise
 	 * @since 3.1
 	 */
-	private boolean canAutoInsert(ICompletionProposal proposal) {
+	boolean canAutoInsert(ICompletionProposal proposal) {
 		if (fContentAssistant.isAutoInserting()) {
 			if (proposal instanceof ICompletionProposalExtension4) {
 				ICompletionProposalExtension4 ext= (ICompletionProposalExtension4) proposal;
@@ -1602,12 +1606,12 @@ class CompletionProposalPopup implements IContentAssistListener {
 					fLastCompletionOffset= fFilterOffset;
 					fFilteredProposals= computeProposals(fInvocationOffset);
 
-					int count= (fFilteredProposals == null ? 0 : fFilteredProposals.length);
+					int count= (fFilteredProposals == null ? 0 : fFilteredProposals.size());
 					if (count == 0 && hideWhenNoProposals(false))
 						return;
 
-					if (count == 1 && canAutoInsert(fFilteredProposals[0])) {
-						insertProposal(fFilteredProposals[0], (char) 0, 0, fInvocationOffset);
+					if (count == 1 && canAutoInsert(fFilteredProposals.get(0))) {
+						insertProposal(fFilteredProposals.get(0), (char) 0, 0, fInvocationOffset);
 						hide();
 					} else {
 						ensureDocumentListenerInstalled();
@@ -1639,9 +1643,9 @@ class CompletionProposalPopup implements IContentAssistListener {
 	private boolean completeCommonPrefix() {
 
 		// 0: insert single proposals
-		if (fFilteredProposals.length == 1) {
-			if (canAutoInsert(fFilteredProposals[0])) {
-				insertProposal(fFilteredProposals[0], (char) 0, 0, fFilterOffset);
+		if (fFilteredProposals.size() == 1) {
+			if (canAutoInsert(fFilteredProposals.get(0))) {
+				insertProposal(fFilteredProposals.get(0), (char) 0, 0, fFilterOffset);
 				hide();
 				return true;
 			}
@@ -1666,8 +1670,8 @@ class CompletionProposalPopup implements IContentAssistListener {
 		List<ICompletionProposal> wrongCase= new ArrayList<>();
 
 		boolean hasMixedProposals= hasMixedProposals();
-		for (int i= 0; i < fFilteredProposals.length; i++) {
-			ICompletionProposal proposal= fFilteredProposals[i];
+		for (int i= 0; i < fFilteredProposals.size(); i++) {
+			ICompletionProposal proposal= fFilteredProposals.get(i);
 
 			if (!(proposal instanceof ICompletionProposalExtension3))
 				return false;
@@ -1799,7 +1803,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 	 * proposals are also present along with prefix proposals (i.e. <code>fFilteredProposals</code>
 	 * list has mixed proposals) then casing of substring matches is ignored for the computation of
 	 * common prefix.
-	 * 
+	 *
 	 * @return <code>true</code> if <code>fFilteredProposals</code> list contains proposals based on
 	 *         different rules
 	 */
@@ -1953,7 +1957,7 @@ class CompletionProposalPopup implements IContentAssistListener {
 
 	/**
 	 * Sets the proposal sorter.
-	 * 
+	 *
 	 * @param sorter the sorter to be used, or <code>null</code> if no sorting is requested
 	 * @since 3.8
 	 * @see ContentAssistant#setSorter(ICompletionProposalSorter)
@@ -1964,12 +1968,12 @@ class CompletionProposalPopup implements IContentAssistListener {
 
 	/**
 	 * Sorts the given proposal array.
-	 * 
+	 *
 	 * @param proposals the new proposals to display in the popup window
 	 * @throws NullPointerException if no sorter has been set
 	 * @since 3.8
 	 */
-	private void sortProposals(final ICompletionProposal[] proposals) {
-		Arrays.sort(proposals, fSorter::compare);
+	void sortProposals(final List<ICompletionProposal> proposals) {
+		proposals.sort(fSorter::compare);
 	}
 }
