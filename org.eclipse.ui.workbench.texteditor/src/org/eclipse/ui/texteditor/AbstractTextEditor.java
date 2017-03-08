@@ -17,6 +17,7 @@
  *     Holger Voormann - Word Wrap - https://bugs.eclipse.org/bugs/show_bug.cgi?id=35779
  *     Florian Weßling <flo@cdhq.de> - Word Wrap - https://bugs.eclipse.org/bugs/show_bug.cgi?id=35779
  *     Andrey Loskutov <loskutov@gmx.de> - Word Wrap - https://bugs.eclipse.org/bugs/show_bug.cgi?id=35779
+ *     Fabio Zadrozny - Macro record/playback - https://bugs.eclipse.org/bugs/show_bug.cgi?id=8519
  *******************************************************************************/
 package org.eclipse.ui.texteditor;
 
@@ -29,6 +30,9 @@ import java.util.Map;
 import java.util.ResourceBundle;
 
 import org.osgi.framework.Bundle;
+
+import org.eclipse.e4.core.macros.EMacroContext;
+import org.eclipse.e4.core.macros.IMacroListener;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.BusyIndicator;
@@ -132,6 +136,7 @@ import org.eclipse.jface.text.ITextHover;
 import org.eclipse.jface.text.ITextInputListener;
 import org.eclipse.jface.text.ITextListener;
 import org.eclipse.jface.text.ITextOperationTarget;
+import org.eclipse.jface.text.ITextOperationTargetExtension;
 import org.eclipse.jface.text.ITextSelection;
 import org.eclipse.jface.text.ITextViewer;
 import org.eclipse.jface.text.ITextViewerExtension;
@@ -208,6 +213,7 @@ import org.eclipse.ui.internal.texteditor.EditPosition;
 import org.eclipse.ui.internal.texteditor.FocusedInformationPresenter;
 import org.eclipse.ui.internal.texteditor.NLSUtility;
 import org.eclipse.ui.internal.texteditor.TextEditorPlugin;
+import org.eclipse.ui.internal.texteditor.macro.StyledTextMacroRecorder;
 import org.eclipse.ui.internal.texteditor.rulers.StringSetSerializer;
 import org.eclipse.ui.operations.LinearUndoViolationUserApprover;
 import org.eclipse.ui.operations.NonLocalUndoUserApprover;
@@ -256,7 +262,10 @@ import org.eclipse.ui.texteditor.rulers.RulerColumnRegistry;
  * {@link #COMMON_RULER_CONTEXT_MENU_ID}.
  * </p>
  */
-public abstract class AbstractTextEditor extends EditorPart implements ITextEditor, IReusableEditor, ITextEditorExtension, ITextEditorExtension2, ITextEditorExtension3, ITextEditorExtension4, ITextEditorExtension5, ITextEditorExtension6, INavigationLocationProvider, ISaveablesSource, IPersistableEditor {
+public abstract class AbstractTextEditor extends EditorPart
+		implements ITextEditor, IReusableEditor, ITextEditorExtension, ITextEditorExtension2, ITextEditorExtension3,
+		ITextEditorExtension4, ITextEditorExtension5, ITextEditorExtension6, INavigationLocationProvider,
+		ISaveablesSource, IPersistableEditor, IMacroListener {
 
 	/**
 	 * Tag used in xml configuration files to specify editor action contributions.
@@ -2625,6 +2634,13 @@ public abstract class AbstractTextEditor extends EditorPart implements ITextEdit
 	 */
 	private IWorkbenchAction fSaveAction;
 
+	/**
+	 * The macro record context.
+	 * 
+	 * @since 3.11
+	 */
+	private EMacroContext fMacroContext;
+
 
 	/**
 	 * Creates a new text editor. If not explicitly set, this editor uses
@@ -3191,11 +3207,20 @@ public abstract class AbstractTextEditor extends EditorPart implements ITextEdit
 
 	@Override
 	public void init(final IEditorSite site, final IEditorInput input) throws PartInitException {
-
 		setSite(site);
 
 		internalInit(site.getWorkbenchWindow(), site, input);
-		fActivationListener= new ActivationListener(site.getWorkbenchWindow().getPartService());
+		fActivationListener = new ActivationListener(site.getWorkbenchWindow().getPartService());
+
+		fMacroContext = site.getService(EMacroContext.class);
+		if (fMacroContext != null) {
+			fMacroContext.addMacroListener(this);
+			if (fMacroContext.isRecording() || fMacroContext.isPlayingBack()) {
+				// If it's already on a record or playback session, enter the
+				// mode properly.
+				this.onMacroStateChanged(fMacroContext);
+			}
+		}
 	}
 
 	/**
@@ -4460,6 +4485,11 @@ public abstract class AbstractTextEditor extends EditorPart implements ITextEdit
 		if (fSaveAction != null) {
 			fSaveAction.dispose();
 			fSaveAction= null;
+		}
+
+		if (fMacroContext != null) {
+			fMacroContext.removeMacroListener(this);
+			fMacroContext = null;
 		}
 
 		super.dispose();
@@ -7398,5 +7428,116 @@ public abstract class AbstractTextEditor extends EditorPart implements ITextEdit
 			return false;
 		}
 		return store.getBoolean(PREFERENCE_WORD_WRAP_ENABLED);
+	}
+
+	/**
+	 * null when not in macro record/playback. Used to check the current state
+	 * and store information to be restored when exiting macro mode.
+	 *
+	 * @since 3.11
+	 */
+	private Map<Object, Object> fInternalStateForRecordPlaybackMode;
+
+	/**
+	 * Clients are meant to override onEnteredMacroRecordOrPlaybackMode or
+	 * onLeftMacroRecordOrPlaybackMode.
+	 *
+	 * @since 3.11
+	 */
+	@Override
+	public final void onMacroStateChanged(EMacroContext macroContext) {
+		boolean isInRecordOrPlaybackMode = macroContext.isRecording() || macroContext.isPlayingBack();
+		if (isInRecordOrPlaybackMode && fInternalStateForRecordPlaybackMode == null) {
+			fInternalStateForRecordPlaybackMode = new HashMap<>();
+			onEnteredMacroRecordOrPlaybackMode(macroContext, fInternalStateForRecordPlaybackMode);
+		} else if (!isInRecordOrPlaybackMode && fInternalStateForRecordPlaybackMode != null) {
+			onLeftMacroRecordOrPlaybackMode(macroContext, fInternalStateForRecordPlaybackMode);
+			fInternalStateForRecordPlaybackMode = null;
+		}
+	}
+
+	/**
+	 * @param macroContext
+	 *            the macro context when leaving macro record/playback mode.
+	 * @param state
+	 *            a place to retrieve information on the state of the editor
+	 *            when entering macro mode.
+	 * @since 3.11
+	 */
+	protected void onLeftMacroRecordOrPlaybackMode(EMacroContext macroContext, Map<Object, Object> state) {
+		// Restores code-completion if it was disabled (based on
+		// fInternalStateForRecordPlaybackMode)
+		ITextOperationTarget textOperationTarget = this.getAdapter(ITextOperationTarget.class);
+		if (textOperationTarget instanceof ITextOperationTargetExtension) {
+			ITextOperationTargetExtension targetExtension = (ITextOperationTargetExtension) textOperationTarget;
+			if (textOperationTarget instanceof ITextOperationTargetExtension) {
+				Object contentAssistProposalsBeforMacroMode = state
+						.get(new Integer(ISourceViewer.CONTENTASSIST_PROPOSALS));
+				if (contentAssistProposalsBeforMacroMode instanceof Boolean) {
+					if (((Boolean) contentAssistProposalsBeforMacroMode).booleanValue()) {
+						targetExtension.enableOperation(ISourceViewer.CONTENTASSIST_PROPOSALS, true);
+					}
+				}
+			}
+		}
+
+		ISourceViewer viewer = fSourceViewer;
+		if (viewer != null) {
+			StyledText textWidget = viewer.getTextWidget();
+			if (textWidget != null && !textWidget.isDisposed()) {
+				Object styledTextMacroRecorder = state.get(StyledTextMacroRecorder.class);
+				if (styledTextMacroRecorder instanceof StyledTextMacroRecorder) {
+					((StyledTextMacroRecorder) styledTextMacroRecorder).uninstall(textWidget);
+				}
+			}
+		}
+	}
+
+	/**
+	 * @param macroContext
+	 *            the macro context when entering macro record/playback mode.
+	 * @param state
+	 *            a place to store information when entering macro mode.
+	 *
+	 * @since 3.11
+	 */
+	protected void onEnteredMacroRecordOrPlaybackMode(EMacroContext macroContext, Map<Object, Object> state) {
+		disableCodeCompletionEnteringMacroRecordOrPlaybackMode(macroContext, state);
+
+		ISourceViewer viewer = fSourceViewer;
+		if (viewer != null) {
+			StyledText textWidget = viewer.getTextWidget();
+			if (textWidget != null && !textWidget.isDisposed()) {
+				StyledTextMacroRecorder styledTextMacroRecorder = new StyledTextMacroRecorder(macroContext);
+				fInternalStateForRecordPlaybackMode.put(StyledTextMacroRecorder.class, styledTextMacroRecorder);
+				styledTextMacroRecorder.install(textWidget);
+			}
+		}
+	}
+
+	/**
+	 * Subclasses may override to skip disabling their code completion when in
+	 * macro mode (this should only be done when all of the code-completions
+	 * available to the editor are properly macro-aware so that it can be
+	 * properly played back afterwards).
+	 *
+	 * @param macroContext
+	 *            the macro context.
+	 * @param state
+	 *            a place to store information when entering macro mode.
+	 *
+	 * @since 3.11
+	 */
+	protected void disableCodeCompletionEnteringMacroRecordOrPlaybackMode(EMacroContext macroContext, Map<Object, Object> state) {
+		ITextOperationTarget textOperationTarget = this.getAdapter(ITextOperationTarget.class);
+		if (textOperationTarget instanceof ITextOperationTargetExtension) {
+			ITextOperationTargetExtension targetExtension = (ITextOperationTargetExtension) textOperationTarget;
+
+			// Disable code-completion and mark it to be restored later on
+			if (textOperationTarget.canDoOperation(ISourceViewer.CONTENTASSIST_PROPOSALS)) {
+				state.put(new Integer(ISourceViewer.CONTENTASSIST_PROPOSALS), Boolean.TRUE);
+				targetExtension.enableOperation(ISourceViewer.CONTENTASSIST_PROPOSALS, false);
+			}
+		}
 	}
 }
